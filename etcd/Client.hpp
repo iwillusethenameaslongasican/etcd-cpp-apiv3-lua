@@ -96,9 +96,9 @@ private:
     return nullptr;
   }
 
-  std::unique_ptr<KV::Stub> stub_;
-  std::unique_ptr<Watch::Stub> watchServiceStub;
-  std::unique_ptr<Lease::Stub> leaseServiceStub;
+  std::unique_ptr<KV::Stub> m_stub;
+  std::unique_ptr<Watch::Stub> m_watchServiceStub;
+  std::unique_ptr<Lease::Stub> m_leaseServiceStub;
 
   lua_State* m_lvm = nullptr;
   int m_token = 0;
@@ -106,10 +106,9 @@ private:
   std::unordered_map<int, std::shared_ptr<etcdv3::AsyncWatchAction>> m_watch_actions;
 
 protected:
-  CompletionQueue cq;
-  etcdv3::ActionParameters parameters;
-
-  CompletionQueue watch_cq;
+  CompletionQueue m_cq;
+  CompletionQueue m_watch_cq;
+  etcdv3::ActionParameters m_parameters;
 
 public:
   DECLARE_LUA_CLASS(Client)

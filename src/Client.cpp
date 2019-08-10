@@ -48,9 +48,9 @@ Client::Client(lua_State* L, std::string const &address)
   }
   std::shared_ptr<Channel> channel =
       grpc::CreateChannel(stripped_address, grpc::InsecureChannelCredentials());
-  stub_ = KV::NewStub(channel);
-  watchServiceStub = Watch::NewStub(channel);
-  leaseServiceStub = Lease::NewStub(channel);
+  m_stub = KV::NewStub(channel);
+  m_watchServiceStub = Watch::NewStub(channel);
+  m_leaseServiceStub = Lease::NewStub(channel);
   m_lvm = L;
 }
 
@@ -76,7 +76,7 @@ int Client::wait(lua_State *L)
   deadline.tv_nsec = 0;
   deadline.clock_type = GPR_TIMESPAN;
 
-  switch (cq.AsyncNext<gpr_timespec>(&got_tag, &ok, deadline)) 
+  switch (m_cq.AsyncNext<gpr_timespec>(&got_tag, &ok, deadline)) 
   {
   case CompletionQueue::TIMEOUT:
     return 0;
@@ -114,7 +114,7 @@ int Client::wait_watch(lua_State *L)
   deadline.tv_nsec = 0;
   deadline.clock_type = GPR_TIMESPAN;  
 
-  switch (watch_cq.AsyncNext<gpr_timespec>(&got_tag, &ok, deadline)) 
+  switch (m_watch_cq.AsyncNext<gpr_timespec>(&got_tag, &ok, deadline)) 
   {
   case CompletionQueue::TIMEOUT:
     // fprintf(stdout, "TIMEOUT\n"); 
@@ -176,10 +176,10 @@ int Client::get(lua_State *L)
   etcdv3::ActionParameters params;
   params.key.assign(key);
   params.withPrefix = false;
-  params.kv_stub = stub_.get();
+  params.kv_stub = m_stub.get();
 
   int token = new_token();
-  std::shared_ptr<etcdv3::AsyncGetAction> call(new etcdv3::AsyncGetAction(params, &cq, (unsigned long)token));
+  std::shared_ptr<etcdv3::AsyncGetAction> call(new etcdv3::AsyncGetAction(params, &m_cq, (unsigned long)token));
   std::function<etcd::Response()> func = std::bind(&etcdv3::AsyncGetAction::ParseResponse, call);
   m_callbacks[token] = func;
   lua_pushinteger(L, token);
@@ -198,12 +198,12 @@ int Client::set(lua_State* L)
   etcdv3::ActionParameters params;
   params.key.assign(key);
   params.value.assign(value);
-  params.kv_stub = stub_.get();
+  params.kv_stub = m_stub.get();
   if (leaseid != 0)
     params.lease_id = leaseid;
 
   int token = new_token();
-  std::shared_ptr<etcdv3::AsyncSetAction> call( new etcdv3::AsyncSetAction(params, &cq, (unsigned long)token));
+  std::shared_ptr<etcdv3::AsyncSetAction> call( new etcdv3::AsyncSetAction(params, &m_cq, (unsigned long)token));
   std::function<etcd::Response()> func = std::bind(&etcdv3::AsyncSetAction::ParseResponse, call);
   m_callbacks[token] = func;
   lua_pushinteger(L, token);
@@ -222,13 +222,13 @@ int Client::add(lua_State* L)
   etcdv3::ActionParameters params;
   params.key.assign(key);
   params.value.assign(value);
-  params.kv_stub = stub_.get();
+  params.kv_stub = m_stub.get();
 
   if (leaseid != 0)
     params.lease_id = leaseid;
 
   int token = new_token();
-  std::shared_ptr<etcdv3::AsyncSetAction> call(new etcdv3::AsyncSetAction(params, &cq, (unsigned long)token, true));
+  std::shared_ptr<etcdv3::AsyncSetAction> call(new etcdv3::AsyncSetAction(params, &m_cq, (unsigned long)token, true));
   std::function<etcd::Response()> func = std::bind(&etcdv3::AsyncSetAction::ParseResponse, call);
   m_callbacks[token] = func;
   lua_pushinteger(L, token);
@@ -247,14 +247,14 @@ int Client::modify(lua_State* L)
   etcdv3::ActionParameters params;
   params.key.assign(key);
   params.value.assign(value);
-  params.kv_stub = stub_.get();
+  params.kv_stub = m_stub.get();
 
   if (leaseid != 0)
     params.lease_id = leaseid;
 
   int token = new_token();
   std::shared_ptr<etcdv3::AsyncUpdateAction> call(
-      new etcdv3::AsyncUpdateAction(params, &cq, (unsigned long)token));
+      new etcdv3::AsyncUpdateAction(params, &m_cq, (unsigned long)token));
   std::function<etcd::Response()> func =
       std::bind(&etcdv3::AsyncUpdateAction::ParseResponse, call);
   m_callbacks[token] = func;
@@ -275,13 +275,13 @@ int Client::modify_if_value(lua_State* L)
   params.key.assign(key);
   params.value.assign(value);
   params.old_value.assign(old_value);
-  params.kv_stub = stub_.get();
+  params.kv_stub = m_stub.get();
 
   if (leaseid != 0)
     params.lease_id = leaseid;
 
   int token = new_token();
-  std::shared_ptr<etcdv3::AsyncCompareAndSwapAction> call(new etcdv3::AsyncCompareAndSwapAction(params, etcdv3::Atomicity_Type::PREV_VALUE, &cq, (unsigned long)token));
+  std::shared_ptr<etcdv3::AsyncCompareAndSwapAction> call(new etcdv3::AsyncCompareAndSwapAction(params, etcdv3::Atomicity_Type::PREV_VALUE, &m_cq, (unsigned long)token));
   std::function<etcd::Response()> func = std::bind(&etcdv3::AsyncCompareAndSwapAction::ParseResponse, call);
   m_callbacks[token] = func;
   lua_pushinteger(L, token);
@@ -302,13 +302,13 @@ int Client::modify_if_index(lua_State* L)
   params.key.assign(key);
   params.value.assign(value);
   params.old_revision = old_index;
-  params.kv_stub = stub_.get();
+  params.kv_stub = m_stub.get();
 
   if (leaseid != 0)
     params.lease_id = leaseid;
 
   int token = new_token();
-  std::shared_ptr<etcdv3::AsyncCompareAndSwapAction> call(new etcdv3::AsyncCompareAndSwapAction(params, etcdv3::Atomicity_Type::PREV_INDEX, &cq, (unsigned long)token));
+  std::shared_ptr<etcdv3::AsyncCompareAndSwapAction> call(new etcdv3::AsyncCompareAndSwapAction(params, etcdv3::Atomicity_Type::PREV_INDEX, &m_cq, (unsigned long)token));
   std::function<etcd::Response()> func = std::bind(&etcdv3::AsyncCompareAndSwapAction::ParseResponse, call);
   m_callbacks[token] = func;
   lua_pushinteger(L, token);
@@ -324,10 +324,10 @@ int Client::rm(lua_State* L)
   etcdv3::ActionParameters params;
   params.key.assign(key);
   params.withPrefix = false;
-  params.kv_stub = stub_.get();
+  params.kv_stub = m_stub.get();
 
   int token = new_token();
-  std::shared_ptr<etcdv3::AsyncDeleteAction> call(new etcdv3::AsyncDeleteAction(params, &cq, (unsigned long)token));
+  std::shared_ptr<etcdv3::AsyncDeleteAction> call(new etcdv3::AsyncDeleteAction(params, &m_cq, (unsigned long)token));
   std::function<etcd::Response()> func = std::bind(&etcdv3::AsyncDeleteAction::ParseResponse, call);
   m_callbacks[token] = func;
   lua_pushinteger(L, token);
@@ -345,10 +345,10 @@ int Client::rm_if_value(lua_State* L)
   etcdv3::ActionParameters params;
   params.key.assign(key);
   params.old_value.assign(old_value);
-  params.kv_stub = stub_.get();
+  params.kv_stub = m_stub.get();
 
   int token = new_token();
-  std::shared_ptr<etcdv3::AsyncCompareAndDeleteAction> call(new etcdv3::AsyncCompareAndDeleteAction(params, etcdv3::Atomicity_Type::PREV_VALUE, &cq, (unsigned long)token));
+  std::shared_ptr<etcdv3::AsyncCompareAndDeleteAction> call(new etcdv3::AsyncCompareAndDeleteAction(params, etcdv3::Atomicity_Type::PREV_VALUE, &m_cq, (unsigned long)token));
   std::function<etcd::Response()> func = std::bind(&etcdv3::AsyncCompareAndDeleteAction::ParseResponse, call);
   m_callbacks[token] = func;
   lua_pushinteger(L, token);
@@ -366,10 +366,10 @@ int Client::rm_if_index(lua_State* L)
   etcdv3::ActionParameters params;
   params.key.assign(key);
   params.old_revision = old_index;
-  params.kv_stub = stub_.get();
+  params.kv_stub = m_stub.get();
 
   int token = new_token();
-  std::shared_ptr<etcdv3::AsyncCompareAndDeleteAction> call(new etcdv3::AsyncCompareAndDeleteAction(params, etcdv3::Atomicity_Type::PREV_INDEX, &cq, (unsigned long)token));
+  std::shared_ptr<etcdv3::AsyncCompareAndDeleteAction> call(new etcdv3::AsyncCompareAndDeleteAction(params, etcdv3::Atomicity_Type::PREV_INDEX, &m_cq, (unsigned long)token));
   std::function<etcd::Response()> func = std::bind(&etcdv3::AsyncCompareAndDeleteAction::ParseResponse, call);
   m_callbacks[token] = func;
   lua_pushinteger(L, token);
@@ -387,10 +387,10 @@ int Client::rmdir(lua_State* L)
   etcdv3::ActionParameters params;
   params.key.assign(key);
   params.withPrefix = recursive;
-  params.kv_stub = stub_.get();
+  params.kv_stub = m_stub.get();
 
   int token = new_token();
-  std::shared_ptr<etcdv3::AsyncDeleteAction> call(new etcdv3::AsyncDeleteAction(params, &cq, (unsigned long)token));
+  std::shared_ptr<etcdv3::AsyncDeleteAction> call(new etcdv3::AsyncDeleteAction(params, &m_cq, (unsigned long)token));
   std::function<etcd::Response()> func = std::bind(&etcdv3::AsyncDeleteAction::ParseResponse, call);
   m_callbacks[token] = func;
   lua_pushinteger(L, token);
@@ -407,10 +407,10 @@ int Client::ls(lua_State* L)
   etcdv3::ActionParameters params;
   params.key.assign(key);
   params.withPrefix = true;
-  params.kv_stub = stub_.get();
+  params.kv_stub = m_stub.get();
 
   int token = new_token();
-  std::shared_ptr<etcdv3::AsyncGetAction> call(new etcdv3::AsyncGetAction(params, &cq, (unsigned long)token));
+  std::shared_ptr<etcdv3::AsyncGetAction> call(new etcdv3::AsyncGetAction(params, &m_cq, (unsigned long)token));
   std::function<etcd::Response()> func =std::bind(&etcdv3::AsyncGetAction::ParseResponse, call);
   m_callbacks[token] = func;
   lua_pushinteger(L, token);
@@ -430,13 +430,13 @@ int Client::watch(lua_State* L)
   etcdv3::ActionParameters params;
   params.key.assign(key);
   params.withPrefix = recursive;
-  params.watch_stub = watchServiceStub.get();
+  params.watch_stub = m_watchServiceStub.get();
 
   if(fromIndex != 0)
     params.revision = fromIndex;
 
   int token = new_token();
-  std::shared_ptr<etcdv3::AsyncWatchAction> call(new etcdv3::AsyncWatchAction(params, &watch_cq, (unsigned long)token));
+  std::shared_ptr<etcdv3::AsyncWatchAction> call(new etcdv3::AsyncWatchAction(params, &m_watch_cq, (unsigned long)token));
   m_watch_actions[token] = call;
   std::function<etcd::Response()> func =std::bind(&etcdv3::AsyncWatchAction::ParseResponse, call);
   m_callbacks[token] = func;
@@ -459,10 +459,10 @@ int Client::leasegrant(lua_State* L)
 
   etcdv3::ActionParameters params;
   params.ttl = ttl;
-  params.lease_stub = leaseServiceStub.get();
+  params.lease_stub = m_leaseServiceStub.get();
 
   int token = new_token();
-  std::shared_ptr<etcdv3::AsyncLeaseGrantAction> call(new etcdv3::AsyncLeaseGrantAction(params, &cq, (unsigned long)token));
+  std::shared_ptr<etcdv3::AsyncLeaseGrantAction> call(new etcdv3::AsyncLeaseGrantAction(params, &m_cq, (unsigned long)token));
   std::function<etcd::Response()> func = std::bind(&etcdv3::AsyncLeaseGrantAction::ParseResponse, call);
   m_callbacks[token] = func;
   lua_pushinteger(L, token);
