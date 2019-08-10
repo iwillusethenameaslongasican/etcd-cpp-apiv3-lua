@@ -89,7 +89,7 @@ int Client::wait(lua_State *L)
     return 0;
   }
   case CompletionQueue::GOT_EVENT:
-    std::function<etcd::Response()> callback = get_callback((int)(unsigned long)(void *)got_tag);
+    std::function<etcd::Response()> callback = get_callback((int)(unsigned long)got_tag);
     if (callback != nullptr) 
     {
       etcd::Response resp = callback(); 
@@ -133,11 +133,11 @@ int Client::wait_watch(lua_State *L)
       if(ok == false || got_tag == (void*)"writes done")
       {
         // fprintf(stdout, "writes done\n");
-        std::shared_ptr<etcdv3::AsyncWatchAction> call = get_watch_action((int)(unsigned long)(void *)got_tag);
+        std::shared_ptr<etcdv3::AsyncWatchAction> call = get_watch_action((int)(unsigned long)got_tag);
         if (call != nullptr)
         {  
           call->CancelWatch();
-          m_watch_actions.erase((int)(unsigned long)(void *)got_tag);
+          m_watch_actions.erase((int)(unsigned long)got_tag);
         }
         std::string err;   
         lua_guard g(m_lvm);
@@ -145,8 +145,8 @@ int Client::wait_watch(lua_State *L)
           printf("call on_watch_response error: %s\n", err.c_str());
         return 0;
       }
-      std::function<etcd::Response()> callback = get_callback((int)(unsigned long)(void *)got_tag);
-      std::shared_ptr<etcdv3::AsyncWatchAction> call = get_watch_action((int)(unsigned long)(void *)got_tag);
+      std::function<etcd::Response()> callback = get_callback((int)(unsigned long)got_tag);
+      std::shared_ptr<etcdv3::AsyncWatchAction> call = get_watch_action((int)(unsigned long)got_tag);
       if (callback != nullptr && call != nullptr) 
       {
         if(call->events_size())
